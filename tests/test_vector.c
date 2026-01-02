@@ -1,78 +1,117 @@
 #include <stdio.h>
 #include <assert.h>
+#include <stdint.h> /* Required for intptr_t */
 #include "../vector/vector.h"
 
-/* Helper for comparisons */
+
+ /* This function handles the "Impedance Mismatch" between storage and search.
+ *
+ * PARAM 'a' (From Vector): IMMEDIATE VALUE.
+ * The vector was optimized to store integers directly inside the pointer bits.
+ * 'a' is NOT a valid memory address. It is the number itself (e.g. 0x...32).
+ * -> We must CAST it (Unpack).
+ *
+ * PARAM 'b' (From Caller): MEMORY REFERENCE.
+ * The search function requires a generic pointer to the target.
+ * 'b' points to a variable living on the stack (e.g. &target).
+ * -> We must DEREFERENCE it (Read Memory).
+ */
 int cmp_int(void *a, void *b) {
-    return *(int*)a - *(int*)b;
+    int val_a = (int)(intptr_t)a; /* Unpack: Treat pointer address as data */
+    int val_b = *(int*)b;         /* Deref:  Follow pointer to read data */
+    return val_a - val_b;
 }
 
 void test_initialization() {
     printf("Test 1: Initialization... ");
-    
+
     Vector *v = vector_create();
-    
-    // Check that it starts empty and with default capacity
+
+    /* Sanity check: Ensure struct is allocated and defaults are set. */
     assert(v != NULL);
     assert(v->size == 0);
     assert(v->max_size == 4);
-    
+
+    v_destroy(v, NULL); /* Clean up vector struct (no items to free) */
     printf("PASSED\n");
 }
 
 void test_push_and_resize() {
     printf("Test 2: Push and Automatic Resize... ");
-    
+
     Vector *v = vector_create();
 
-    //fill the vector (4 elements)
+    /* FILL VECTOR
+     * We are pushing integers cast to void*.
+     * Memory layout: [ITEMS ARRAY] -> [10][20][30][40] (contiguous)
+     */
     vector_new_int(v, 10);
     vector_new_int(v, 20);
     vector_new_int(v, 30);
     vector_new_int(v, 40);
 
-    // should be full but not resized yet
+    /* Boundary check before resize */
     assert(v->size == 4);
-    assert(v->max_size == 4); 
+    assert(v->max_size == 4);
 
-    // add 5th element, realloc must trigger here
+    /* FORCE RESIZE
+     * Pushing the 5th element triggers realloc() inside vector_push.
+     * Capacity should double to 8.
+     */
     vector_new_int(v, 50);
 
-    // check if capacity doubled
     assert(v->size == 5);
-    assert(v->max_size == 8); 
-    
-    //verify data integrity
-    int *val = (int*) vector_get(v, 4); // Index 4 is the 5th element (50)
-    assert(*val == 50);
+    assert(v->max_size == 8);
 
+    /* DATA VERIFICATION
+     * vector_get(v, 4) returns a void* containing 0x32 (50).
+     *
+     * WRONG WAY:  *(int*)ptr
+     * This tries to read memory at address 50 and will launch a SEGFAULT (Core Dump).
+     *
+     * RIGHT WAY:  (int)ptr
+     * Because the address IS the value.
+     */
+    int val = (int)(intptr_t)vector_get(v, 4); 
+    assert(val == 50);
+
+    v_destroy(v, NULL);
     printf("PASSED\n");
 }
 
 void test_delete_and_shift() {
     printf("Test 3: Deletion and Shift... ");
-    
+
     Vector *v = vector_create();
 
-    // Create [10, 20, 30]
+    /* Setup: [10, 20, 30] */
     vector_new_int(v, 10);
     vector_new_int(v, 20);
     vector_new_int(v, 30);
 
-    // Delete 20 (the middle element)
+    /* DELETE OPERATIONS
+     * We pass '&target'  because the API expects a void*.
+     * The cmp_int function will handle the comparison logic.
+     * We pass NULL as destructor because '20' is not malloc'd (it's embedded).
+     */
     int target = 20;
-    vector_del(v, &target, cmp_int);
+    vector_del(v, &target, cmp_int, NULL);
 
-    // Now we should have [10, 30]
+    /* Verify Size */
     assert(v->size == 2);
-    
-    // Check if index 1 is now 30 (Shift occurred)
-    int *val = (int*)vector_get(v, 1);
-    assert(*val == 30);
 
-    // Ensure 20 is really gone
+    /* VERIFY SHIFT
+     * Memory was: [10][20][30]
+     * Memory is:  [10][30]
+     * Index 1 must now contain 30.
+     */
+    int val = (int)(intptr_t)vector_get(v, 1);
+    assert(val == 30);
+
+    /* Verify Search logic confirms deletion */
     assert(vector_search(v, &target, cmp_int) == NULL);
 
+    v_destroy(v, NULL);
     printf("PASSED\n");
 }
 
