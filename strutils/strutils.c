@@ -16,11 +16,7 @@ char *find_and_replace(char *src, char *search, char *replace) {
 
     int count = 0;
     char *tmp = src;
-    
-    if (count == 0) {
-        return (char*) strdup(src);
-    }
-   
+      
     /* We must assign the result of strstr() to 'tmp' to jump to the match.
      *
      * WHY THIS MATTERS:
@@ -38,6 +34,10 @@ char *find_and_replace(char *src, char *search, char *replace) {
         /*Start count AFTER the word which we found. */
         tmp += strlen(search); 
     }  
+ 
+    if (count == 0) {
+        return (char*) strdup(src);
+    }
 
     /*calculate the new string */
     int search_len = strlen(search);
